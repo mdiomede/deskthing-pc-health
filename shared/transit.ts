@@ -87,8 +87,39 @@ export type HealthReport = {
   categories: HealthCategory[];
 };
 
+/** One category's status moving between two scans. */
+export type StatusChange = {
+  name: string;
+  from: CategoryStatus;
+  to: CategoryStatus;
+  /** True when the move is toward trouble (OK -> WARN), false when it recovers. */
+  worse: boolean;
+};
+
+/**
+ * What changed since the previous scan.
+ *
+ * A snapshot answers "how is it now", which a glanceable screen is bad at
+ * making meaningful - 93 means nothing without knowing it was 100 yesterday.
+ * This is the part worth reading from across the room.
+ */
+export type HealthDelta = {
+  /** Timestamp of the report being compared against. */
+  since: string;
+  /** exactScore now minus exactScore then. Negative means it got worse. */
+  scoreDelta: number;
+  /** New corrected WHEA errors inside the 30-day window since the last scan. */
+  newWhea30d: number;
+  /** New unexpected shutdowns / BSODs in the 30-day window. */
+  newCrashes30d: number;
+  /** Categories whose status changed between the two scans. */
+  changes: StatusChange[];
+};
+
 export type HealthPayload = {
   report: HealthReport | null;
+  /** Null when there is no earlier report to compare against. */
+  delta: HealthDelta | null;
   updated: string;
   error?: string;
 };

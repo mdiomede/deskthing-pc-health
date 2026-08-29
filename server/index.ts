@@ -15,7 +15,9 @@ import {
   CategoryStatus,
   CategoryMetrics,
   HealthCategory,
+  HealthDelta,
   HealthPayload,
+  StatusChange,
   HealthReport,
   ToClientData,
   ToServerData,
@@ -43,95 +45,162 @@ let reading = false;
 
 const VALID: CategoryStatus[] = ["OK", "INFO", "WARN", "CRIT"];
 
-/** Newest health-*.json in the directory, by mtime. */
-const newestReportPath = async (dir: string): Promise<string | null> => {
+/**
+ * The two newest health-*.json files by mtime, newest first.
+ *
+ * The second one is what makes the "since last scan" line possible. Sorting the
+ * whole list is fine here - the directory holds tens of files, not thousands,
+ * and it is read once per poll.
+ */
+const newestReportPaths = async (dir: string): Promise<string[]> => {
   const names = (await readdir(dir)).filter(
     (n) => n.startsWith("health-") && n.endsWith(".json")
   );
-  if (names.length === 0) return null;
-
-  let best: { path: string; mtime: number } | null = null;
+  const stamped: { path: string; mtime: number }[] = [];
   for (const n of names) {
     const p = join(dir, n);
     try {
-      const s = await stat(p);
-      if (!best || s.mtimeMs > best.mtime) best = { path: p, mtime: s.mtimeMs };
+      const st = await stat(p);
+      stamped.push({ path: p, mtime: st.mtimeMs });
     } catch {
       /* skip unreadable */
     }
   }
-  return best?.path ?? null;
+  stamped.sort((a, b) => b.mtime - a.mtime);
+  return stamped.slice(0, 2).map((x) => x.path);
+};
+
+/** Parse one health-*.json into a HealthReport. */
+const parseReport = async (path: string): Promise<HealthReport> => {
+  // PC Health Checker writes these with a UTF-8 BOM (it is a PowerShell
+  // script). JSON.parse rejects a leading U+FEFF outright, so strip it.
+  const text = (await readFile(path, "utf-8")).replace(/^﻿/, "");
+  const parsed = JSON.parse(text);
+
+  const categories: HealthCategory[] = (parsed.categories ?? []).map(
+    (c: Record<string, unknown>) => ({
+      name: String(c.Name ?? "Unknown"),
+      status: (VALID.includes(c.Status as CategoryStatus)
+        ? c.Status
+        : "INFO") as CategoryStatus,
+      penalty: Number(c.Penalty ?? 0),
+      details: Array.isArray(c.Details) ? (c.Details as string[]) : [],
+      // Pass the whole bag through untouched. Its shape varies by category and
+      // the client picks out what it can draw; dropping it here is what left
+      // the screen with nothing but prose to render.
+      metrics: (c.Metrics ?? {}) as CategoryMetrics,
+    })
+  );
+
+  // Worst first: a CRIT must never be below the fold.
+  const rank: Record<CategoryStatus, number> = { CRIT: 0, WARN: 1, INFO: 2, OK: 3 };
+  categories.sort((a, b) => rank[a.status] - rank[b.status]);
+
+  // The checker rounds: it reported 100 while still carrying a WARN worth 0.3,
+  // so the headline number and the status colour contradicted each other on
+  // screen. Recompute from the penalties so 100 means nothing was deducted.
+  const deducted = categories.reduce((sum, c) => sum + (c.penalty || 0), 0);
+  const exactScore = Math.round((100 - deducted) * 10) / 10;
+
+  const cpuStr = String(parsed.system?.CPU ?? "");
+  const coreMatch = cpuStr.match(/\((\d+)C\s*\/\s*\d+T\)/i);
+
+  return {
+    timestamp: String(parsed.timestamp ?? ""),
+    score: Number(parsed.score ?? 0),
+    exactScore,
+    grade: String(parsed.grade ?? "?"),
+    headline: String(parsed.headline ?? ""),
+    days: Number(parsed.days ?? 0),
+    computer: String(parsed.system?.Computer ?? ""),
+    cpu: cpuStr,
+    cores: coreMatch ? Number(coreMatch[1]) : 0,
+    os: String(parsed.system?.OS ?? ""),
+    bios: String(parsed.system?.BIOS ?? ""),
+    categories,
+  };
+};
+
+const metricOf = (r: HealthReport, name: string, key: string): number => {
+  const c = r.categories.find((x) => x.name === name);
+  const v = c?.metrics ? (c.metrics as Record<string, unknown>)[key] : undefined;
+  return typeof v === "number" ? v : 0;
+};
+
+const RANK: Record<CategoryStatus, number> = { OK: 0, INFO: 1, WARN: 2, CRIT: 3 };
+
+/**
+ * Diff two scans.
+ *
+ * Counts come from the 30-day metrics rather than the 120-day totals on
+ * purpose: the 120-day window slides, so an old error ageing out of it reads
+ * as an improvement that never happened. Between two scans days apart, the
+ * 30-day figure is the one that only moves when something actually occurred.
+ */
+const computeDelta = (now: HealthReport, prev: HealthReport): HealthDelta => {
+  const changes: StatusChange[] = [];
+  for (const c of now.categories) {
+    const before = prev.categories.find((x) => x.name === c.name);
+    if (!before || before.status === c.status) continue;
+    changes.push({
+      name: c.name,
+      from: before.status,
+      to: c.status,
+      worse: RANK[c.status] > RANK[before.status],
+    });
+  }
+  changes.sort((a, b) => RANK[b.to] - RANK[a.to]);
+
+  const whea = "Hardware Errors (WHEA)";
+  const crash = "Stability / Crashes";
+  return {
+    since: prev.timestamp,
+    scoreDelta: Math.round((now.exactScore - prev.exactScore) * 10) / 10,
+    newWhea30d: Math.max(
+      0,
+      metricOf(now, whea, "corrected_30d") - metricOf(prev, whea, "corrected_30d")
+    ),
+    newCrashes30d: Math.max(
+      0,
+      metricOf(now, crash, "kp41_30d") +
+        metricOf(now, crash, "bsod_30d") -
+        metricOf(prev, crash, "kp41_30d") -
+        metricOf(prev, crash, "bsod_30d")
+    ),
+    changes,
+  };
 };
 
 const readReport = async (): Promise<HealthPayload> => {
   const now = new Date().toISOString();
   try {
-    const path = await newestReportPath(cfg.dir);
-    if (!path) {
-      return { report: null, updated: now, error: "No health reports found" };
+    const paths = await newestReportPaths(cfg.dir);
+    if (paths.length === 0) {
+      return { report: null, delta: null, updated: now, error: "No health reports found" };
     }
 
-    // PC Health Checker writes these with a UTF-8 BOM (it is a PowerShell
-    // script). JSON.parse rejects a leading U+FEFF outright, so strip it.
-    const text = (await readFile(path, "utf-8")).replace(/^\uFEFF/, "");
-    const parsed = JSON.parse(text);
+    const report = await parseReport(paths[0]);
 
-    const categories: HealthCategory[] = (parsed.categories ?? []).map(
-      (c: Record<string, unknown>) => ({
-        name: String(c.Name ?? "Unknown"),
-        status: (VALID.includes(c.Status as CategoryStatus)
-          ? c.Status
-          : "INFO") as CategoryStatus,
-        penalty: Number(c.Penalty ?? 0),
-        details: Array.isArray(c.Details) ? (c.Details as string[]) : [],
-        // Pass the whole bag through untouched. Its shape varies by category and
-        // the client picks out what it can draw; dropping it here is what left
-        // the screen with nothing but prose to render.
-        metrics: (c.Metrics ?? {}) as CategoryMetrics,
-      })
-    );
+    // A missing or unreadable previous report is not an error - it just means
+    // there is nothing to compare against yet, so the screen omits the line.
+    let delta: HealthDelta | null = null;
+    if (paths[1]) {
+      try {
+        delta = computeDelta(report, await parseReport(paths[1]));
+      } catch {
+        delta = null;
+      }
+    }
 
-    // Worst first: a CRIT must never be below the fold.
-    const rank: Record<CategoryStatus, number> = {
-      CRIT: 0,
-      WARN: 1,
-      INFO: 2,
-      OK: 3,
-    };
-    categories.sort((a, b) => rank[a.status] - rank[b.status]);
-
-    // The checker rounds: it reported 100 while still carrying a WARN worth 0.3,
-    // so the headline number and the status colour contradicted each other on
-    // screen. Recompute from the penalties so 100 means nothing was deducted.
-    const deducted = categories.reduce((sum, c) => sum + (c.penalty || 0), 0);
-    const exactScore = Math.round((100 - deducted) * 10) / 10;
-
-    const cpuStr = String(parsed.system?.CPU ?? "");
-    const coreMatch = cpuStr.match(/\((\d+)C\s*\/\s*\d+T\)/i);
-
-    const report: HealthReport = {
-      timestamp: String(parsed.timestamp ?? ""),
-      score: Number(parsed.score ?? 0),
-      exactScore,
-      grade: String(parsed.grade ?? "?"),
-      headline: String(parsed.headline ?? ""),
-      days: Number(parsed.days ?? 0),
-      computer: String(parsed.system?.Computer ?? ""),
-      cpu: cpuStr,
-      cores: coreMatch ? Number(coreMatch[1]) : 0,
-      os: String(parsed.system?.OS ?? ""),
-      bios: String(parsed.system?.BIOS ?? ""),
-      categories,
-    };
-
-    return { report, updated: now };
+    return { report, delta, updated: now };
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
-      return { report: null, updated: now, error: `Not found: ${cfg.dir}` };
+      return { report: null, delta: null, updated: now, error: `Not found: ${cfg.dir}` };
     }
     return {
       report: null,
+      delta: null,
       updated: now,
       error: `Cannot read report (${code ?? (err as Error)?.message ?? "unknown"})`,
     };

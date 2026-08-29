@@ -6,6 +6,7 @@ import {
   CategoryStatus,
   EventSeries,
   HealthCategory,
+  HealthDelta,
   HealthPayload,
   HealthReport,
   ToClientData,
@@ -165,6 +166,64 @@ const Vital: React.FC<{
   </div>
 );
 
+/**
+ * What changed since the previous scan.
+ *
+ * A snapshot is a bad fit for a screen you glance at: 93 means nothing unless
+ * you remember it was 100 yesterday. This line is the one thing on the panel
+ * that answers a question you actually have, so it sits directly under the
+ * score and states the quiet case as plainly as the noisy one.
+ */
+const Since: React.FC<{ delta: HealthDelta }> = ({ delta }) => {
+  const when = (() => {
+    const t = Date.parse(delta.since);
+    if (Number.isNaN(t)) return "the last scan";
+    return new Date(t).toLocaleString(undefined, {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  })();
+
+  const bits: string[] = [];
+  if (delta.scoreDelta !== 0) {
+    bits.push(`${delta.scoreDelta > 0 ? "+" : ""}${delta.scoreDelta} score`);
+  }
+  if (delta.newWhea30d > 0) bits.push(`${delta.newWhea30d} new WHEA`);
+  if (delta.newCrashes30d > 0) bits.push(`${delta.newCrashes30d} new crash`);
+  for (const c of delta.changes.slice(0, 2)) {
+    bits.push(`${c.name.split(" ")[0]} ${c.from}→${c.to}`);
+  }
+
+  const bad = delta.scoreDelta < 0 || delta.changes.some((c) => c.worse);
+  const quiet = bits.length === 0;
+
+  return (
+    <div
+      className={`mt-2.5 flex shrink-0 items-center gap-2.5 rounded-lg border px-3.5 py-2 ${
+        quiet
+          ? "border-ok/25 bg-ok/[0.07]"
+          : bad
+          ? "border-warn/40 bg-warn/[0.09]"
+          : "border-ok/25 bg-ok/[0.07]"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${bad && !quiet ? "bg-warn" : "bg-ok"}`}
+      />
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-read">
+        {quiet ? (
+          <>Nothing changed since {when}</>
+        ) : (
+          <>
+            Since {when}: <span className="font-semibold text-tx">{bits.join(" · ")}</span>
+          </>
+        )}
+      </span>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [openCat, setOpenCat] = useState<string | null>(null);
@@ -304,8 +363,10 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {health?.delta && <Since delta={health.delta} />}
+
       {/* Vitals. Every cell is a number the checker actually measured. */}
-      <div className="mt-3 flex shrink-0 overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="mt-2.5 flex shrink-0 overflow-hidden rounded-xl border border-line bg-surface">
         <Vital
           label="WHEA 30d"
           value={whea?.metrics.corrected_30d ?? 0}
