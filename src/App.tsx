@@ -57,6 +57,32 @@ const ago = (isoStr: string): string => {
   return `${Math.round(h / 24)}d ago`;
 };
 
+/**
+ * Date formatting WITHOUT Intl.
+ *
+ * The Car Thing's Chromium is built with minimal ICU, so
+ * `toLocaleString(undefined, { month: "short" })` silently ignores the options
+ * and returns the whole `Sat May 02 2026 12:05:01 GMT-0400 (...)` string. Four
+ * of those absolutely positioned on the month axis rendered as one unreadable
+ * pile. Anything user-visible here has to be formatted by hand.
+ */
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const shortMonth = (d: Date): string => MONTHS[d.getMonth()] ?? "";
+
+/** e.g. "Thu 4:36 PM" */
+const shortWhen = (d: Date): string => {
+  const h24 = d.getHours();
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${WEEKDAYS[d.getDay()]} ${h}:${m} ${h24 < 12 ? "AM" : "PM"}`;
+};
+
+/** Thousands separators without Number.prototype.toLocaleString. */
+const grouped = (n: number): string =>
+  String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
 const dayKey = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -213,11 +239,7 @@ const Since: React.FC<{ delta: HealthDelta }> = ({ delta }) => {
   const when = (() => {
     const t = Date.parse(delta.since);
     if (Number.isNaN(t)) return "the last scan";
-    return new Date(t).toLocaleString(undefined, {
-      weekday: "short",
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    return shortWhen(new Date(t));
   })();
 
   const bits: string[] = [];
@@ -329,7 +351,7 @@ const App: React.FC = () => {
       const k = `${b.date.getFullYear()}-${b.date.getMonth()}`;
       if (seen.has(k)) return;
       seen.add(k);
-      out.push({ i, label: b.date.toLocaleString(undefined, { month: "short" }) });
+      out.push({ i, label: shortMonth(b.date) });
     });
     return out;
   }, [wheaDays]);
@@ -425,7 +447,7 @@ const App: React.FC = () => {
           label="Free"
           value={
             <>
-              {freeGB.toLocaleString()}
+              {grouped(freeGB)}
               <span className="text-[15px] text-faint"> GB</span>
             </>
           }
