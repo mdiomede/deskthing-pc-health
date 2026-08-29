@@ -120,12 +120,17 @@ const Track: React.FC<{
   const max = Math.max(1, ...buckets.map((b) => b.n));
   return (
     <button onClick={onOpen} className="flex w-full items-center gap-4 py-1.5 text-left">
-      <div className="w-[132px] shrink-0">
+      <div className="w-[152px] shrink-0">
         <div className="flex items-center gap-2">
           <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${FILL[tone]}`} />
           <span className="text-[13px] font-semibold text-tx">{label}</span>
         </div>
-        <div className="mt-1 pl-[15px] text-[11px] text-faint">{sub}</div>
+        {/* truncate, not wrap. "12 corrected · 1 fatal" is ~121px against
+            117px of usable column, so without this it takes a second line,
+            grows both track rows, and shoves the month axis into them. */}
+        <div className="mt-1 truncate whitespace-nowrap pl-[15px] text-[11px] text-faint">
+          {sub}
+        </div>
       </div>
       <div className="flex h-[46px] min-w-0 flex-1 items-end gap-px">
         {buckets.map((b, i) => (
@@ -331,7 +336,9 @@ const App: React.FC = () => {
   const open = openCat ? by(openCat) : null;
 
   return (
-    <div className="relative flex h-screen w-screen flex-col bg-bg px-5 pb-3 pt-4 font-body text-tx">
+    // pb-6, not pb-3: the bottom edge belongs to the system's now-playing bar,
+    // which is drawn over this app even with no audio app installed.
+    <div className="relative flex h-screen w-screen flex-col bg-bg px-5 pb-6 pt-4 font-body text-tx">
       {/* Hero. The ring carries the state so the number never has to: a 93 in
           amber text reads as an accusation, a neutral 93 inside an amber arc
           reads as a measurement. */}
@@ -432,11 +439,13 @@ const App: React.FC = () => {
           buckets={crashDays}
           onOpen={() => setOpenCat(crash?.name ?? null)}
         />
-        <div className="relative ml-[148px] mt-1 h-3 shrink-0">
+        {/* Offset must track the label column width + the gap-4 (16px), or the
+            axis drifts out of register with the bars above it. */}
+        <div className="relative ml-[168px] mt-1 h-4 shrink-0">
           {monthTicks.map((t) => (
             <span
               key={t.i}
-              className="absolute text-[10.5px] text-faint"
+              className="absolute whitespace-nowrap text-[10.5px] leading-none text-faint"
               style={{ left: `${(t.i / days) * 100}%` }}
             >
               {t.label}
