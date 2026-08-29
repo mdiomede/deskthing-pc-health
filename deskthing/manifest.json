@@ -1,0 +1,30 @@
+{
+  "version_code": 11,
+  "isWebApp": true,
+  "updateUrl": "",
+  "homepage": "https://github.com/mdiomede/deskthing-pc-health",
+  "id": "pchealth",
+  "compatible_client": [
+    11
+  ],
+  "label": "PC Health",
+  "repository": "https://github.com/mdiomede/deskthing-pc-health",
+  "description": "Latest PC Health Checker report: score, grade and per-category findings.",
+  "tags": [
+    "webappOnly"
+  ],
+  "compatible_server": [
+    11
+  ],
+  "template": "base",
+  "requires": [],
+  "version": "0.2.1",
+  "author": "Matt",
+  "platforms": [
+    "windows"
+  ],
+  "requiredVersions": {
+    "server": ">=0.11.0",
+    "client": ">=0.11.0"
+  }
+}

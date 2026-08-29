@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- PC Health: a heartbeat trace across a dark panel. Distinct at 16px from
+       the Claude Status row-stack and from the template gear. -->
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#1b1815"/>
+  <path d="M12 33 h9 l4 -11 l6 22 l5 -15 l4 4 h12"
+        fill="none" stroke="#7ec86a" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
