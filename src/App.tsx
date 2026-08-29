@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createDeskThing } from "@deskthing/client";
+import { EventMode } from "@deskthing/types";
 import {
   CLIENT_TYPE,
   SERVER_TYPE,
@@ -313,6 +314,39 @@ const App: React.FC = () => {
     // The key string must be "wheel"; the JSDoc's "Scroll" is not what the
     // client actually checks.
     DeskThing.overrideKeys(["wheel"]);
+
+    /* -----------------------------------------------------------------------
+     * Make the four physical preset buttons work while this app is open.
+     *
+     * DeskThing's client shell listens for the button keydowns on ITS document.
+     * The moment an app's iframe takes focus the events land in the iframe
+     * instead, and key events do not cross document boundaries - so the shell
+     * never sees them and the buttons go dead until you swipe back out. The
+     * client library attaches no key listener of its own (it only listens for
+     * postMessage), so nothing forwards them on your behalf.
+     *
+     * triggerKey is the supported way back: catch the key here and hand it to
+     * the shell, which runs whatever the mapping has bound to it. That keeps
+     * the binding as the single source of truth - this does not hardcode which
+     * app each button opens, so remapping in the UI still works.
+     *
+     * PressShort (10) is deliberate: mode 11 (PressLong) never fires on this
+     * client, so mode 10 is the only one the bindings actually use.
+     * --------------------------------------------------------------------- */
+    const onPresetKey = (e: KeyboardEvent) => {
+      if (!/^Digit[1-4]$/.test(e.code)) return;
+      e.preventDefault();
+      // KeyReference is { id, mode, source } - the library's own JSDoc says
+      // `key`, which does not compile. Trust the type, not the comment.
+      void DeskThing.triggerKey({
+        id: e.code,
+        mode: EventMode.PressShort,
+        source: "server",
+      });
+    };
+    window.addEventListener("keydown", onPresetKey);
+    document.addEventListener("keydown", onPresetKey);
+
     const onWheel = (e: WheelEvent) => {
       const el = scroller.current;
       if (!el) return;
@@ -324,6 +358,8 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
       off();
+      window.removeEventListener("keydown", onPresetKey);
+      document.removeEventListener("keydown", onPresetKey);
       window.removeEventListener("wheel", onWheel);
       document.removeEventListener("wheel", onWheel);
       DeskThing.restoreKeys(["wheel"]);
