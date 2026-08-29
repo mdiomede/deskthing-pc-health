@@ -4,6 +4,7 @@ import {
   CLIENT_TYPE,
   SERVER_TYPE,
   CategoryStatus,
+  CoreTemp,
   EventSeries,
   HealthCategory,
   HealthDelta,
@@ -148,26 +149,55 @@ const Track: React.FC<{
   );
 };
 
+/**
+ * Ten cores as a grid, hottest lit.
+ *
+ * This is the one panel element that is diagnostic rather than informational:
+ * on this machine cores 4 and 5 run consistently hotter than the other eight,
+ * and those are the same two cores the corrected WHEA errors land on. A row of
+ * numbers buries that; a grid makes it the first thing you see.
+ *
+ * "Hot" is relative to this reading, not an absolute threshold - the point is
+ * which cores are outliers today, not whether the chip is overheating (it is
+ * not; 55C is unremarkable).
+ */
+const CoreGrid: React.FC<{ cores: CoreTemp[] }> = ({ cores }) => {
+  const max = Math.max(...cores.map((c) => c.c));
+  return (
+    <div className="mt-1 flex gap-[3px]">
+      {cores.map((c) => {
+        const hot = c.c >= max - 1;
+        return (
+          <span
+            key={c.n}
+            title={`core ${c.n}: ${c.c}C`}
+            className={`h-[9px] min-w-0 flex-1 rounded-[2px] ${hot ? "bg-warn" : "bg-raise"}`}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
 const Vital: React.FC<{
   label: string;
   value: React.ReactNode;
   sub: string;
   bar?: number;
+  /** Optional visual slotted between the value and the sub line. */
+  grid?: React.ReactNode;
   last?: boolean;
-}> = ({ label, value, sub, bar, last }) => (
+}> = ({ label, value, sub, bar, grid, last }) => (
   <div className={`flex flex-1 flex-col gap-1 px-4 py-3 ${last ? "" : "border-r border-line"}`}>
     <div className="text-micro font-semibold uppercase text-faint">{label}</div>
     <div className="font-display text-val font-semibold tabular-nums text-tx">{value}</div>
-    {bar === undefined ? (
-      <div className="text-[11px] text-mut">{sub}</div>
-    ) : (
-      <>
-        <div className="mt-0.5 h-[5px] overflow-hidden rounded-full bg-line">
-          <div className="h-full rounded-full bg-ok" style={{ width: `${Math.min(100, bar)}%` }} />
-        </div>
-        <div className="text-[11px] text-mut">{sub}</div>
-      </>
+    {bar !== undefined && (
+      <div className="mt-0.5 h-[5px] overflow-hidden rounded-full bg-line">
+        <div className="h-full rounded-full bg-ok" style={{ width: `${Math.min(100, bar)}%` }} />
+      </div>
     )}
+    {grid}
+    <div className="truncate text-[11px] text-mut">{sub}</div>
   </div>
 );
 
@@ -331,6 +361,7 @@ const App: React.FC = () => {
   const mem = by("Memory")?.metrics;
   const rel = by("Reliability Index")?.metrics;
   const up = by("Uptime / Boot")?.metrics;
+  const therm = by("Thermals")?.metrics;
   const drives = by("Storage")?.metrics.drives ?? [];
   const freeGB = drives.reduce((s, d) => s + d.vols.reduce((v, x) => v + (x.freeGB || 0), 0), 0);
   const open = openCat ? by(openCat) : null;
@@ -405,17 +436,36 @@ const App: React.FC = () => {
           value={(rel?.latest ?? 0).toFixed(2)}
           sub={`14d avg ${(rel?.avg14 ?? 0).toFixed(1)}`}
         />
-        <Vital
-          label="Uptime"
-          value={
-            <>
-              {(up?.uptimeDays ?? 0).toFixed(1)}
-              <span className="text-[15px] text-faint">d</span>
-            </>
-          }
-          sub={`${up?.slowBoots ?? 0} slow boots`}
-          last
-        />
+        {/* CPU replaces Uptime here: uptime is a number you already know, and
+            the core grid is the only thing on this screen that can show WHICH
+            part of the machine is the outlier. Falls back to uptime when
+            HWiNFO is not publishing, rather than rendering an empty cell. */}
+        {therm?.cores?.length ? (
+          <Vital
+            label="CPU"
+            value={
+              <>
+                {Math.round(therm.cpuMaxC ?? 0)}
+                <span className="text-[15px] text-faint">°C</span>
+              </>
+            }
+            grid={<CoreGrid cores={therm.cores} />}
+            sub={therm.gpuC ? `GPU ${Math.round(therm.gpuC)}°C` : `${therm.cores.length} cores`}
+            last
+          />
+        ) : (
+          <Vital
+            label="Uptime"
+            value={
+              <>
+                {(up?.uptimeDays ?? 0).toFixed(1)}
+                <span className="text-[15px] text-faint">d</span>
+              </>
+            }
+            sub={`${up?.slowBoots ?? 0} slow boots`}
+            last
+          />
+        )}
       </div>
 
       {/* The recorder: the element the desktop report has and the old screen

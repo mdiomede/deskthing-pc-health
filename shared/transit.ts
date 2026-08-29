@@ -44,7 +44,22 @@ export type CategoryMetrics = {
   /** Storage */
   drives?: Drive[];
   smart?: Smart[];
+  /**
+   * Thermals. Only present when HWiNFO is running with Shared Memory Support
+   * enabled - the checker reads its live shared memory block. Without it the
+   * whole category comes through empty, which is why this used to be blank.
+   */
+  cores?: CoreTemp[];
+  hotCore?: number;
+  cpuMaxC?: number;
+  gpuC?: number;
+  /** "C" or "F" - the checker's display preference, worth honouring. */
+  unit?: string;
+  cpuMaxDisp?: string;
 };
+
+/** One physical core's temperature, in Celsius, as HWiNFO reports it. */
+export type CoreTemp = { n: number; c: number };
 
 export type Volume = { id: string; freePct: number; freeGB: number };
 export type Drive = {
