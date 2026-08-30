@@ -191,14 +191,21 @@ const Track: React.FC<{
 const CoreGrid: React.FC<{ cores: CoreTemp[] }> = ({ cores }) => {
   const max = Math.max(...cores.map((c) => c.c));
   return (
-    <div className="mt-1 flex gap-[3px]">
+    // 18px tall, not 9. The first version was 10x9px per core inside a fifth of
+    // the vitals strip - it rendered correctly and still read as a dashed line
+    // rather than a grid at across-the-room distance, which is the only
+    // distance this screen is ever read from. A diagnostic that needs squinting
+    // is not a diagnostic.
+    <div className="mt-1.5 flex gap-[3px]">
       {cores.map((c) => {
         const hot = c.c >= max - 1;
         return (
           <span
             key={c.n}
             title={`core ${c.n}: ${c.c}C`}
-            className={`h-[9px] min-w-0 flex-1 rounded-[2px] ${hot ? "bg-warn" : "bg-raise"}`}
+            className={`h-[18px] min-w-0 flex-1 rounded-[3px] ${
+              hot ? "bg-warn" : "bg-raise"
+            }`}
           />
         );
       })}
@@ -213,9 +220,15 @@ const Vital: React.FC<{
   bar?: number;
   /** Optional visual slotted between the value and the sub line. */
   grid?: React.ReactNode;
+  /** Claim extra width - the core grid needs it to be readable. */
+  wide?: boolean;
   last?: boolean;
-}> = ({ label, value, sub, bar, grid, last }) => (
-  <div className={`flex flex-1 flex-col gap-1 px-4 py-3 ${last ? "" : "border-r border-line"}`}>
+}> = ({ label, value, sub, bar, grid, wide, last }) => (
+  <div
+    className={`flex flex-col gap-1 px-4 py-3 ${wide ? "flex-[1.6]" : "flex-1"} ${
+      last ? "" : "border-r border-line"
+    }`}
+  >
     <div className="text-micro font-semibold uppercase text-faint">{label}</div>
     <div className="font-display text-val font-semibold tabular-nums text-tx">{value}</div>
     {bar !== undefined && (
@@ -509,6 +522,7 @@ const App: React.FC = () => {
             }
             grid={<CoreGrid cores={therm.cores} />}
             sub={therm.gpuC ? `GPU ${Math.round(therm.gpuC)}°C` : `${therm.cores.length} cores`}
+            wide
             last
           />
         ) : (
