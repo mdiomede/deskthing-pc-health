@@ -256,7 +256,7 @@ const CoreGrid: React.FC<{
                   against the edge was smaller than the temperature it was
                   supposed to qualify. */}
               {large && errs > 0 && (
-                <span className="mt-1.5 rounded-full bg-crit px-2 py-0.5 text-[15px] font-bold text-bone">
+                <span className="mt-1.5 rounded-full bg-crit px-2 py-0.5 text-[15px] font-bold text-bg">
                   {errs} err
                 </span>
               )}
