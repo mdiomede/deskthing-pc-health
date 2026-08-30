@@ -489,7 +489,11 @@ const App: React.FC = () => {
           <CoreGrid cores={therm.cores} onOpen={() => setOpenCat("Thermals")} />
         ) : null}
 
-        <div className="shrink-0 text-right">
+        {/* ml-7 on top of the row's gap-5: the machine name is right-aligned and
+            long ("WATCHUKNOWABOUT"), so 20px of gap left it touching the grid.
+            Separation lives here rather than on the grid so the grid stays
+            centred in the slack the flex-1 verdict block leaves. */}
+        <div className="ml-7 shrink-0 text-right">
           <div className="text-[12px] font-semibold text-mut">{report.computer}</div>
           <div className="mt-1 text-[11px] tabular-nums text-faint">{ago(report.timestamp)}</div>
           <div className="text-[11px] text-faint">{days}d window</div>
