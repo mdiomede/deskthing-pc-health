@@ -190,10 +190,12 @@ const Track: React.FC<{
  */
 const CoreGrid: React.FC<{
   cores: CoreTemp[];
+  /** Corrected WHEA errors per physical core, over the report's window. */
+  errors?: Record<string, number>;
   /** Big enough to read a temperature in each cell, for the detail overlay. */
   large?: boolean;
   onOpen?: () => void;
-}> = ({ cores, large, onOpen }) => {
+}> = ({ cores, errors, large, onOpen }) => {
   const max = Math.max(...cores.map((c) => c.c));
   const cell = large ? "h-[54px] w-[54px] text-[15px]" : "h-[23px] w-[23px] text-[10px]";
   const Tag = (onOpen ? "button" : "div") as React.ElementType;
@@ -212,14 +214,23 @@ const CoreGrid: React.FC<{
       <div className={`grid grid-cols-5 ${large ? "gap-2" : "gap-1"}`}>
         {cores.map((c) => {
           const hot = c.c >= max - 1;
+          const errs = errors?.[String(c.n)] ?? 0;
           return (
             <div
               key={c.n}
-              title={`core ${c.n}: ${c.c}C`}
-              className={`flex ${cell} flex-col items-center justify-center rounded-[4px] font-display font-semibold leading-none ${
+              title={`core ${c.n}: ${c.c}C${errs ? `, ${errs} corrected errors` : ""}`}
+              className={`relative flex ${cell} flex-col items-center justify-center rounded-[4px] font-display font-semibold leading-none ${
                 hot ? "bg-warn text-bg" : "bg-raise text-faint"
-              }`}
+              } ${errs ? "ring-2 ring-crit" : ""}`}
             >
+              {/* Fill = temperature. Ring = corrected errors. Two independent
+                  signals, deliberately encoded differently so a core that is
+                  merely warm is never mistaken for one that is faulting. */}
+              {errs > 0 && large && (
+                <span className="absolute -right-1 -top-1 rounded-full bg-crit px-1 text-[10px] font-bold text-bone">
+                  {errs}
+                </span>
+              )}
               {/* Small: just the core number, enough to see WHICH is lit.
                   Large: the number and its temperature, since at 54px there is
                   room to actually read it. */}
@@ -486,7 +497,11 @@ const App: React.FC = () => {
           </div>
         </div>
         {therm?.cores?.length ? (
-          <CoreGrid cores={therm.cores} onOpen={() => setOpenCat("Thermals")} />
+          <CoreGrid
+            cores={therm.cores}
+            errors={whea?.metrics.byCore}
+            onOpen={() => setOpenCat("Thermals")}
+          />
         ) : null}
 
         {/* ml-7 on top of the row's gap-5: the machine name is right-aligned and
@@ -623,7 +638,7 @@ const App: React.FC = () => {
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto pt-3">
             {open.name === "Thermals" && open.metrics.cores?.length ? (
               <div className="mb-4">
-                <CoreGrid cores={open.metrics.cores} large />
+                <CoreGrid cores={open.metrics.cores} errors={whea?.metrics.byCore} large />
               </div>
             ) : null}
             <ul className="flex flex-col gap-2.5">

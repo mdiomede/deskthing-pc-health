@@ -21,6 +21,14 @@ export type CategoryMetrics = {
   byDay?: EventSeries;
   byMonth?: EventSeries;
   /** WHEA */
+  /**
+   * Corrected errors bucketed by PHYSICAL core, from each event's ApicId.
+   * This is what turns the core grid from a thermometer into a diagnostic:
+   * temperature says which core is warmest, this says which one is actually
+   * throwing errors, and they are not the same question.
+   */
+  byCore?: Record<string, number>;
+  byCore30d?: Record<string, number>;
   corrected?: number;
   corrected_30d?: number;
   uncorrected?: number;
