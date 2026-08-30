@@ -104,6 +104,17 @@ const toDays = (series: EventSeries | undefined, end: Date, days: number) => {
   return out;
 };
 
+/**
+ * Temperatures arrive in Celsius regardless of preference; the report carries
+ * the wanted unit separately (`metrics.unit`, from HWiNFO's TempScale). The
+ * core grid rendered the raw Celsius while the detail text beside it already
+ * said degF - two units on one screen.
+ */
+const asUnit = (celsius: number, unit?: string): number =>
+  unit === "F" ? celsius * 1.8 + 32 : celsius;
+
+const unitLabel = (unit?: string): string => (unit === "F" ? "°F" : "°C");
+
 const Ring: React.FC<{ value: number; tone: CategoryStatus; grade: string }> = ({
   value,
   tone,
@@ -192,10 +203,12 @@ const CoreGrid: React.FC<{
   cores: CoreTemp[];
   /** Corrected WHEA errors per physical core, over the report's window. */
   errors?: Record<string, number>;
+  /** "C" or "F" - the unit the report asked to be displayed in. */
+  unit?: string;
   /** Big enough to read a temperature in each cell, for the detail overlay. */
   large?: boolean;
   onOpen?: () => void;
-}> = ({ cores, errors, large, onOpen }) => {
+}> = ({ cores, errors, unit, large, onOpen }) => {
   const max = Math.max(...cores.map((c) => c.c));
   // Large cells FILL their grid column and stay square, rather than being
   // pinned to a fixed width. Pinning them to 54px inside a full-width
@@ -216,9 +229,9 @@ const CoreGrid: React.FC<{
   const Tag = (onOpen ? "button" : "div") as React.ElementType;
   return (
     <Tag onClick={onOpen} className="shrink-0 text-left">
-      {!large && (
-        <div className="mb-1.5 text-micro font-semibold uppercase text-faint">Cores</div>
-      )}
+      <div className="mb-1.5 text-micro font-semibold uppercase text-faint">
+        {large ? `Cores · ${unitLabel(unit)}` : "Cores"}
+      </div>
       {/* 5 across, 2 down, square, numbered - ported from the desktop report's
           `.cores { grid-template-columns: repeat(5,1fr) }` rule.
           Two earlier attempts laid all ten out in ONE row and just made the
@@ -237,7 +250,9 @@ const CoreGrid: React.FC<{
           return (
             <div
               key={c.n}
-              title={`core ${c.n}: ${c.c}C${errs ? `, ${errs} corrected errors` : ""}`}
+              title={`core ${c.n}: ${Math.round(asUnit(c.c, unit))}${unitLabel(unit)}${
+                errs ? `, ${errs} corrected errors` : ""
+              }`}
               className={`relative flex ${cell} flex-col items-center justify-center rounded-[4px] font-display font-semibold leading-none ${
                 hot ? "bg-warn text-bg" : "bg-raise text-faint"
               } ${errs ? (large ? "ring-[5px] ring-crit" : "ring-2 ring-crit") : ""}`}
@@ -250,7 +265,15 @@ const CoreGrid: React.FC<{
                   Large: the number and its temperature, since at 54px there is
                   room to actually read it. */}
               <span className={large ? "text-[18px] opacity-60" : ""}>{c.n}</span>
-              {large && <span className="mt-0.5 text-[48px] leading-none">{c.c}</span>}
+              {large && (
+                <span className="mt-0.5 flex items-start leading-none">
+                  <span className="text-[48px]">{Math.round(asUnit(c.c, unit))}</span>
+                  {/* A bare number in a thermal grid is ambiguous - it could be
+                      a count. The degree mark is small and raised so it reads
+                      as a unit rather than competing with the value. */}
+                  <span className="mt-[3px] text-[22px] opacity-70">&deg;</span>
+                </span>
+              )}
               {/* Errors go INSIDE the cell, not in a corner badge. The count is
                   the whole point of the zoomed view, and a 12px number tucked
                   against the edge was smaller than the temperature it was
@@ -527,6 +550,7 @@ const App: React.FC = () => {
           <CoreGrid
             cores={therm.cores}
             errors={whea?.metrics.byCore}
+            unit={therm.unit}
             onOpen={() => setOpenCat("Thermals")}
           />
         ) : null}
@@ -586,11 +610,15 @@ const App: React.FC = () => {
             label="CPU"
             value={
               <>
-                {Math.round(therm.cpuMaxC ?? 0)}
-                <span className="text-[15px] text-faint">°C</span>
+                {Math.round(asUnit(therm.cpuMaxC ?? 0, therm.unit))}
+                <span className="text-[15px] text-faint">{unitLabel(therm.unit)}</span>
               </>
             }
-            sub={therm.gpuC ? `GPU ${Math.round(therm.gpuC)}°C` : `${therm.cores.length} cores`}
+            sub={
+              therm.gpuC
+                ? `GPU ${Math.round(asUnit(therm.gpuC, therm.unit))}${unitLabel(therm.unit)}`
+                : `${therm.cores.length} cores`
+            }
             last
           />
         ) : (
@@ -665,7 +693,12 @@ const App: React.FC = () => {
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto pt-3">
             {open.name === "Thermals" && open.metrics.cores?.length ? (
               <div className="mb-4">
-                <CoreGrid cores={open.metrics.cores} errors={whea?.metrics.byCore} large />
+                <CoreGrid
+                  cores={open.metrics.cores}
+                  errors={whea?.metrics.byCore}
+                  unit={open.metrics.unit}
+                  large
+                />
               </div>
             ) : null}
             <ul className="flex flex-col gap-2.5">
