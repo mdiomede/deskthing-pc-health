@@ -188,28 +188,48 @@ const Track: React.FC<{
  * which cores are outliers today, not whether the chip is overheating (it is
  * not; 55C is unremarkable).
  */
-const CoreGrid: React.FC<{ cores: CoreTemp[] }> = ({ cores }) => {
+const CoreGrid: React.FC<{
+  cores: CoreTemp[];
+  /** Big enough to read a temperature in each cell, for the detail overlay. */
+  large?: boolean;
+  onOpen?: () => void;
+}> = ({ cores, large, onOpen }) => {
   const max = Math.max(...cores.map((c) => c.c));
+  const cell = large ? "h-[54px] w-[54px] text-[15px]" : "h-[23px] w-[23px] text-[10px]";
+  const Tag = (onOpen ? "button" : "div") as React.ElementType;
   return (
-    // 18px tall, not 9. The first version was 10x9px per core inside a fifth of
-    // the vitals strip - it rendered correctly and still read as a dashed line
-    // rather than a grid at across-the-room distance, which is the only
-    // distance this screen is ever read from. A diagnostic that needs squinting
-    // is not a diagnostic.
-    <div className="mt-1.5 flex gap-[3px]">
-      {cores.map((c) => {
-        const hot = c.c >= max - 1;
-        return (
-          <span
-            key={c.n}
-            title={`core ${c.n}: ${c.c}C`}
-            className={`h-[18px] min-w-0 flex-1 rounded-[3px] ${
-              hot ? "bg-warn" : "bg-raise"
-            }`}
-          />
-        );
-      })}
-    </div>
+    <Tag onClick={onOpen} className="shrink-0 text-left">
+      <div className="mb-1.5 text-micro font-semibold uppercase text-faint">
+        {large ? "Cores · °C" : "Cores"}
+      </div>
+      {/* 5 across, 2 down, square, numbered - ported from the desktop report's
+          `.cores { grid-template-columns: repeat(5,1fr) }` rule.
+          Two earlier attempts laid all ten out in ONE row and just made the
+          cells bigger. Ten cells in a line is a segmented progress bar no
+          matter how tall they are; the thing that makes this read as a grid is
+          that it is two-dimensional and the cells are square with a number in
+          them. Shape, not size. */}
+      <div className={`grid grid-cols-5 ${large ? "gap-2" : "gap-1"}`}>
+        {cores.map((c) => {
+          const hot = c.c >= max - 1;
+          return (
+            <div
+              key={c.n}
+              title={`core ${c.n}: ${c.c}C`}
+              className={`flex ${cell} flex-col items-center justify-center rounded-[4px] font-display font-semibold leading-none ${
+                hot ? "bg-warn text-bg" : "bg-raise text-faint"
+              }`}
+            >
+              {/* Small: just the core number, enough to see WHICH is lit.
+                  Large: the number and its temperature, since at 54px there is
+                  room to actually read it. */}
+              <span className={large ? "text-[10px] opacity-70" : ""}>{c.n}</span>
+              {large && <span className="mt-1 text-[16px]">{c.c}</span>}
+            </div>
+          );
+        })}
+      </div>
+    </Tag>
   );
 };
 
@@ -465,6 +485,10 @@ const App: React.FC = () => {
             )}
           </div>
         </div>
+        {therm?.cores?.length ? (
+          <CoreGrid cores={therm.cores} onOpen={() => setOpenCat("Thermals")} />
+        ) : null}
+
         <div className="shrink-0 text-right">
           <div className="text-[12px] font-semibold text-mut">{report.computer}</div>
           <div className="mt-1 text-[11px] tabular-nums text-faint">{ago(report.timestamp)}</div>
@@ -520,9 +544,7 @@ const App: React.FC = () => {
                 <span className="text-[15px] text-faint">°C</span>
               </>
             }
-            grid={<CoreGrid cores={therm.cores} />}
             sub={therm.gpuC ? `GPU ${Math.round(therm.gpuC)}°C` : `${therm.cores.length} cores`}
-            wide
             last
           />
         ) : (
@@ -595,6 +617,11 @@ const App: React.FC = () => {
             </span>
           </div>
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto pt-3">
+            {open.name === "Thermals" && open.metrics.cores?.length ? (
+              <div className="mb-4">
+                <CoreGrid cores={open.metrics.cores} large />
+              </div>
+            ) : null}
             <ul className="flex flex-col gap-2.5">
               {open.details.map((d, i) => (
                 <li key={i} className="relative pl-4 text-[16px] leading-relaxed text-read">
