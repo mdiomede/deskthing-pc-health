@@ -249,14 +249,17 @@ const CoreGrid: React.FC<{
               {/* Small: just the core number, enough to see WHICH is lit.
                   Large: the number and its temperature, since at 54px there is
                   room to actually read it. */}
-              <span className={large ? "text-[15px] opacity-60" : ""}>{c.n}</span>
-              {large && <span className="mt-0.5 text-[40px] leading-none">{c.c}</span>}
+              <span className={large ? "text-[18px] opacity-60" : ""}>{c.n}</span>
+              {large && <span className="mt-0.5 text-[48px] leading-none">{c.c}</span>}
               {/* Errors go INSIDE the cell, not in a corner badge. The count is
                   the whole point of the zoomed view, and a 12px number tucked
                   against the edge was smaller than the temperature it was
                   supposed to qualify. */}
               {large && errs > 0 && (
-                <span className="mt-1.5 rounded-full bg-crit px-2 py-0.5 text-[15px] font-bold text-bg">
+                <span className="mt-2 rounded-full bg-crit px-2.5 py-1 text-[21px] font-bold leading-none text-bg">
+                  {/* Keep the unit. The cell already shows a big number
+                      (temperature); a second bare number in a pill would be
+                      ambiguous, and the label was dropped in the large view. */}
                   {errs} err
                 </span>
               )}
