@@ -203,15 +203,22 @@ const CoreGrid: React.FC<{
   // which reads as five separated pairs with dead space between them instead
   // of one dense block. Small cells keep a fixed size because the hero has no
   // width to give them.
+  // Explicit height, NOT aspect-square.
+  //
+  // A grid item defaults to align-items:stretch, so its height is already
+  // determined by the row - which the content sizes. With both dimensions
+  // resolved, `aspect-ratio` is simply discarded. The class was present in the
+  // compiled CSS and did nothing: cells rendered ~120x42 instead of square,
+  // and no amount of changing the width was ever going to fix that.
   const cell = large
-    ? "w-full aspect-square text-[15px]"
+    ? "h-[136px] w-full text-[15px]"
     : "h-[23px] w-[23px] text-[10px]";
   const Tag = (onOpen ? "button" : "div") as React.ElementType;
   return (
     <Tag onClick={onOpen} className="shrink-0 text-left">
-      <div className="mb-1.5 text-micro font-semibold uppercase text-faint">
-        {large ? "Cores · °C" : "Cores"}
-      </div>
+      {!large && (
+        <div className="mb-1.5 text-micro font-semibold uppercase text-faint">Cores</div>
+      )}
       {/* 5 across, 2 down, square, numbered - ported from the desktop report's
           `.cores { grid-template-columns: repeat(5,1fr) }` rule.
           Two earlier attempts laid all ten out in ONE row and just made the
@@ -221,7 +228,7 @@ const CoreGrid: React.FC<{
           them. Shape, not size. */}
       <div
         className={`grid grid-cols-5 ${
-          large ? "w-full max-w-[600px] gap-2.5" : "gap-1"
+          large ? "w-full gap-3" : "gap-1"
         }`}
       >
         {cores.map((c) => {
@@ -233,21 +240,26 @@ const CoreGrid: React.FC<{
               title={`core ${c.n}: ${c.c}C${errs ? `, ${errs} corrected errors` : ""}`}
               className={`relative flex ${cell} flex-col items-center justify-center rounded-[4px] font-display font-semibold leading-none ${
                 hot ? "bg-warn text-bg" : "bg-raise text-faint"
-              } ${errs ? "ring-2 ring-crit" : ""}`}
+              } ${errs ? (large ? "ring-[5px] ring-crit" : "ring-2 ring-crit") : ""}`}
             >
               {/* Fill = temperature. Ring = corrected errors. Two independent
                   signals, deliberately encoded differently so a core that is
                   merely warm is never mistaken for one that is faulting. */}
-              {errs > 0 && large && (
-                <span className="absolute -right-1.5 -top-1.5 rounded-full bg-crit px-1.5 py-0.5 text-[12px] font-bold text-bone">
-                  {errs}
-                </span>
-              )}
+
               {/* Small: just the core number, enough to see WHICH is lit.
                   Large: the number and its temperature, since at 54px there is
                   room to actually read it. */}
-              <span className={large ? "text-[13px] opacity-60" : ""}>{c.n}</span>
-              {large && <span className="mt-1 text-[30px] leading-none">{c.c}</span>}
+              <span className={large ? "text-[15px] opacity-60" : ""}>{c.n}</span>
+              {large && <span className="mt-0.5 text-[40px] leading-none">{c.c}</span>}
+              {/* Errors go INSIDE the cell, not in a corner badge. The count is
+                  the whole point of the zoomed view, and a 12px number tucked
+                  against the edge was smaller than the temperature it was
+                  supposed to qualify. */}
+              {large && errs > 0 && (
+                <span className="mt-1.5 rounded-full bg-crit px-2 py-0.5 text-[15px] font-bold text-bone">
+                  {errs} err
+                </span>
+              )}
             </div>
           );
         })}
